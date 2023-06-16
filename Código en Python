@@ -1,1 +1,4 @@
+#Se descarga la biblioteca Spacy
+!python -m spacy download es_core_news_sm # Se reincia el entorno de ejecución
+
 
