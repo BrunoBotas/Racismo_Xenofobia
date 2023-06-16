@@ -160,3 +160,112 @@ df_analisis
 #Generamos el csv de la columna lemas y el completo
 df_analisis['lemmas'].to_csv('Lemmas_racismo_v9.csv')
 df_analisis.to_csv('Racismo_limpio_v9.csv')
+
+#Creación del Wordcloud
+
+#Se define la función de crear una gráfica de wordcloud y se establecen las características
+def plot_cloud(wordcloud):
+    plt.figure(figsize=(10, 7))
+    plt.imshow(wordcloud) 
+    plt.axis("off");
+    
+#Pintamos el wordcloud
+wordcloud = WordCloud(width = 3000, height = 2000, random_state=1, max_words=100, background_color='black', colormap='Set3', collocations=False, stopwords = STOPWORDS).generate(' '.join(df_analisis['lemmas']))
+plot_cloud(wordcloud) 
+
+#Análisis Descriptivo de N-Gramas
+
+#Leemos el csv con los datos limpios y filtramos por la columna "Lemas"
+df_analisis = pd.read_csv('Racismo_limpio_v9.csv')
+dft= df_analisis['lemmas']
+dft = [x for x in dft if str(x) != 'nan']
+print(dft)
+
+#Se calculan el Valor de TF-IDF de los unigramas
+tfIdfVectorizer=TfidfVectorizer(use_idf=True, ngram_range=(1,1))
+tfIdf = tfIdfVectorizer.fit_transform(dft)
+names=tfIdfVectorizer.get_feature_names_out()
+freqs = tfIdf.sum(axis=0).A1
+result= dict(zip(names, freqs))
+print(result)
+
+# Se enseñan los 30 unigramas con mayor valor TF-IDF
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 31:
+      break
+    print(key, value)
+
+#Se pintan los 30 unigramas con más TF-IDF
+df_results=pd.DataFrame.from_dict(results_sorted).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results[0],df_results[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Unigramas más relevantes del corpus')
+
+#Se realiza lo mismo con bigramas y trigramas
+
+#Bigramas
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 31:
+      break
+    print(key, value)
+    
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del corpus')
+
+#Trigramas
+
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 31:
+      break
+    print(key, value)
+    
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del corpus')
+
+#Modelado de Tópicos
+
+
+
+
+
+
+
