@@ -1,4 +1,162 @@
 #Se descarga la biblioteca Spacy
 !python -m spacy download es_core_news_sm # Se reincia el entorno de ejecución
 
+#Se carga la librería
+import spacy
+nlp = spacy.load('es_core_news_sm')
 
+#Se intalan los distintos paquetes que se van a utilizar
+import sys
+if 'google.colab' in sys.modules:
+    !pip install emoji --upgrade
+    !pip install pandas-profiling==2.*
+    !pip install plotly==4.*
+    !python -m spacy download es_core_news_sm
+    !pip install pyldavis
+    !pip install gensim
+    !pip install nltk
+    !pip install chart_studio
+    !pip install --upgrade autopep8
+    !pip install vaderSentiment
+    !pip install datatable
+    !pip install unidecode 
+    !pip install --upgrade pip
+    !pip install -U numpy #Volver a reiniciar el entorno de ejecución
+    
+#Se cargan las librerias
+#Base and Cleaning 
+import json
+import requests
+import pandas as pd
+import numpy as np
+import emoji
+import regex
+import re
+import string
+import pandas as pd
+from collections import Counter
+from random import seed
+from unidecode import unidecode
+
+#Visualizations
+import plotly.express as px
+import seaborn as sns
+import matplotlib.pyplot as plt 
+import pyLDAvis
+import chart_studio
+import chart_studio.plotly as py 
+import chart_studio.tools as tls
+import matplotlib.pyplot as plt
+import pyLDAvis.gensim_models as gensimvis
+
+#Natural Language Processing (NLP)
+import spacy
+import gensim
+from spacy.tokenizer import Tokenizer
+from gensim.corpora import Dictionary
+from gensim.models.ldamulticore import LdaMulticore
+from gensim import models
+from gensim.models.coherencemodel import CoherenceModel
+from gensim.parsing.preprocessing import STOPWORDS as SW
+from sklearn.decomposition import LatentDirichletAllocation, TruncatedSVD
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.model_selection import GridSearchCV
+from pprint import pprint
+from wordcloud import WordCloud, STOPWORDS
+stopwords = set(STOPWORDS)
+import nltk 
+from nltk.tokenize import word_tokenize
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer 
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+
+#Pre-procesado de datos
+
+#Se cargan los datos obtenidos en R
+df_analisis = pd.read_csv('df_filtered_xenofobia.csv',sep=';')
+
+#Se seleccionan aquellos en español
+df_analisis = df_analisis[df_analisis['lang'] =="es"]
+
+#Se quitan las stopwords
+stop_words=stopwords.words('spanish')
+print(stop_words)
+
+#Se quitan aquellas stopwords que no se hayan eliminado en el proceso anterior
+stop_words.extend(['y','des','ayyyy','etc','jo'])
+
+#realizamos el proceso de lematización y añadimos de forma manual aquellas que no se hayan realizado
+nlp = spacy.load('es_core_news_sm')
+def lemma_words(text):
+    lemmas = []
+    doc= nlp(text)
+    for token in doc: 
+        if ((token.is_stop == False) and (token.is_punct == False)) and (token.pos_ != 'PRON'):
+            lemmas.append(token.lemma_)
+    lemmas= [i for i in lemmas if len(i) > 1]
+    lemmas = [word for line in lemmas for word in line.split()]
+    lemmas=[word for word in lemmas if word not in stop_words]
+    lemmas=' '.join(lemmas)
+    lemmas=unidecode(lemmas, "utf-8")
+    lemmas=re.sub(r"\bllegado\b", "llegar", lemmas)
+    lemmas=re.sub(r"\bdigais\b", "decir", lemmas)
+    lemmas=re.sub(r"\bmigrant\b", "migrante", lemmas)
+    lemmas=re.sub(r"\bespaa\b", "españa", lemmas)
+    lemmas=re.sub(r"\bmigrant\b", "migrante", lemmas)
+    lemmas=re.sub(r"\barabir\b", "arabe", lemmas)
+    lemmas=re.sub(r"\bespaol\b", "español", lemmas)
+    lemmas=re.sub(r"\balienigen\b", "alienigena", lemmas)
+    lemmas=re.sub(r"\bpatero\b", "patera", lemmas)
+    lemmas=re.sub(r"\bruso\b", "rusia", lemmas)
+    lemmas=re.sub(r"\balmerio\b", "almeria", lemmas)
+    lemmas=re.sub(r"\bbiografie\b", "biografia", lemmas)
+    lemmas=re.sub(r"\bdio\b", "dios", lemmas)
+    lemmas=re.sub(r"\bingl\b", "ingles", lemmas)
+    lemmas=re.sub(r"\baparecero\b", "aparecer", lemmas)
+    lemmas=re.sub(r"\bhebreir\b", "hebreo", lemmas)
+    lemmas=re.sub(r"\barabar\b", "arabe", lemmas)
+    lemmas=re.sub(r"\bquemado\b", "quemar", lemmas)
+    lemmas=re.sub(r"\btoma\b", "tomas", lemmas)
+    lemmas=re.sub(r"\bnios\b", "niños", lemmas)
+    lemmas=re.sub(r"\bpai\b", "pais", lemmas)
+    lemmas=re.sub(r"\bgracia\b", "gracias", lemmas)
+    lemmas=re.sub(r"\bmarrueco\b", "marruecos", lemmas)
+    lemmas=re.sub(r"\bisleto\b", "isleta", lemmas)
+    lemmas=re.sub(r"\bnio\b", "niño", lemmas)
+    lemmas=re.sub(r"\bcambio\b", "cambiar", lemmas)
+    lemmas=re.sub(r"\bexpon\b", "exponer", lemmas)
+    lemmas=re.sub(r"\bcompro\b", "comprar", lemmas)
+    lemmas=re.sub(r"\bnurio\b", "nuria", lemmas)
+    lemmas=re.sub(r"\btraido\b", "traer", lemmas)
+    lemmas=re.sub(r"\bnecesitario\b", "necesitar", lemmas)
+    lemmas=re.sub(r"\bspacio\b", "espacio", lemmas)
+    lemmas=re.sub(r"\bexisten\b", "existir", lemmas)
+    lemmas=re.sub(r"\borquestado\b", "orquestar", lemmas)
+    lemmas=re.sub(r"\bbeneficiado\b", "beneficiar", lemmas)
+    lemmas=re.sub(r"\bmen\b", "mena", lemmas)
+    lemmas=re.sub(r"\bderechos\b", "derecho", lemmas)
+    lemmas=re.sub(r"\bxenofobio\b", "xenofobia", lemmas)
+    lemmas=re.sub(r"\bsharaui\b", "sahara", lemmas)
+    lemmas=re.sub(r"\bquemao\b", "quemar", lemmas)
+    lemmas=re.sub(r"\bacompaar\b", "acompañar", lemmas)
+    lemmas=re.sub(r"\bacompaado\b", "acompañar", lemmas)
+    lemmas=re.sub(r"\bucraniano\b", "ucrania", lemmas)
+    lemmas=re.sub(r"\bao\b", "año", lemmas)
+    lemmas=re.sub(r"\baos\b", "año", lemmas)
+    lemmas=re.sub(r"\binvestigacion\b", "investigar", lemmas)
+    lemmas = lemmas.split()
+    lemmas=[word for word in lemmas if word not in stop_words]
+    lemmas=' '.join(lemmas)
+    return lemmas
+
+
+df_analisis['lemmas'] = df_analisis['cleaned_text'].apply(lemma_words)
+    
+#Eliminamos las celdas vacias y los lemas duplicados
+df_analisis.dropna(inplace=True)
+df_analisis = df_analisis.drop_duplicates(subset='lemmas', keep="first")
+df_analisis
+
+#Generamos el csv de la columna lemas y el completo
+df_analisis['lemmas'].to_csv('Lemmas_racismo_v9.csv')
+df_analisis.to_csv('Racismo_limpio_v9.csv')
