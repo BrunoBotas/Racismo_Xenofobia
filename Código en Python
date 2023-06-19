@@ -263,6 +263,585 @@ plt.title('Trigramas más relevantes del corpus')
 
 #Modelado de Tópicos
 
+#Cargamos el csv con la limpieza hecha para realizar el modelado de tópicos
+df_modelado = pd.read_csv('Racismo_limpio_v9.csv')
+print(df_model.head())
+
+#Tokenizamos la data
+def tokenize(text):
+    text = str(text)
+    tokens = text.split() 
+    return tokens
+
+df_modelado['tokens'] = df_modelado['lemmas'].apply(tokenize)
+print(df_modelado.head())
+
+#Importamos una semilla para la reproducibilidad de los resultados
+seed(24)
+#Y creamos un dccionario a partir de los tokens encontrados
+id2word = Dictionary(df_model['tokens'])
+
+#Se filtran los extremos
+id2word.filter_extremes(no_below=2, no_above=.95)
+
+#Se crea el objeto del corpus
+corpus = [id2word.doc2bow(d) for d in df_model['tokens']]
+
+#Se procede a encontrar el valor óptimo de k
+def compute_coherence_values(dictionary, corpus, texts, limit, start=2, step=2):
+coherence_values_topic = []
+    model_list_topic = []
+    for num_topics in range(start, limit, step):
+        model = LdaMulticore(corpus=corpus, num_topics=num_topics, id2word=id2word, passes=5)
+        model_list_topic.append(model)
+        coherencemodel = CoherenceModel(model=model, texts=texts, dictionary=dictionary, coherence='c_v')
+        coherence_values_topic.append(coherencemodel.get_coherence())
+
+    return model_list_topic, coherence_values_topic
+    
+ #Se aplica la función definida en el paso anterior
+ model_list_topic, coherence_values_topic = compute_coherence_values(dictionary=id2word,
+                                                        corpus=corpus,
+                                                        texts=df_model['tokens'],
+                                                        start=2, limit=15, step=1) #Establecemos el rango de tópicos
+                                    
+#Se crea un csv con los valores coherencia del rango de tópicos establecido en el paso anterior
+coherence_values_topic_df = pd.DataFrame(coherence_values_topic) 
+coherence_values_topic_df.to_csv('coherence_values.csv', index=False)
+coherence_values_topic_df= pd.read_csv('coherence_values.csv', index_col=False)
+coherence_values_topic_df
+
+#Se crea una lista ocn los valores de las columnas indicados
+coherence_values_topic_df=coherence_values_topic_df.iloc[:, 0].tolist()
+
+#Se dibuja una gráfica donde aparezcan elnúmero de tópicos y los valores coherencia para poder elegir el k óptimo
+import matplotlib.path as mpath
+plt.figure(figsize=(10,7))
+estrella = mpath.Path.unit_regular_star(8)
+circulo = mpath.Path.unit_circle()
+verts = np.concatenate([circulo.vertices, estrella.vertices[::-1, ...]])
+codes = np.concatenate([circulo.codes, estrella.codes])
+cut_star = mpath.Path(verts, codes)
+plt.plot([2,3,4,5,6,7,8,9,10,11,12,13,14],coherence_values_topic_df, '--r', marker="o", markersize=10, fillstyle='none')
+plt.axvline(x=8, color='b', linestyle='--')
+plt.plot(8, 0.410042, '--r', marker=cut_star, markersize=18)
+plt.xlabel('Número de tópicos')
+plt.ylabel('Indice de coherencia')
+
+#Se genera el modelo LDA con el número de k elegido, en este caso k=8
+K=8
+model_k8 = gensim.models.LdaMulticore(corpus=corpus, 
+                                        id2word=id2word, 
+                                        num_topics=k,
+                                        passes=5)
+                                        
+#Se procede a guardar y cargar todos los resultados obtenidos del modelo
+model_k8.save("model_8_topics.model")
+model_k8_load=LdaMulticore.load("model_8_topics.model")
+
+#Se calcula el valor coherencia del modelo creado
+coherence_model_k8 = CoherenceModel(model=model_k8_load, texts=df_model['tokens'], 
+                                   dictionary=id2word, coherence='c_v')
+coherence_model_k8 = coherence_model_k8.get_coherence()
+print('\nCoherence Score: ', coherence_model_k8)
+
+#Se observan las 12 palaras más utilizadas en cada tópico
+print(model_k8_load.print_topics())
+doc_lda = model_k8_load[corpus]
+#Se filtra por palabras
+words = [re.findall(r'"([^"]*)"',t[1]) for t in model_k8_load.print_topics()]
+#Se crean los tópicos
+topics = [' '.join(t[0:10]) for t in words]
+for id, t in enumerate(topics): 
+    print(f"------ Topic {id} ------")
+    print(t, end="\n\n")
+
+#Pintamos la distancia intertópica con pyLDAvis
+pyLDAvis.enable_notebook()
+gensimvis.prepare(model_k8_load, corpus, id2word)
+
+#Se añade una columna de LDA features al modelo cargado
+def document_to_lda_features(model_k8_load,document):
+  topic_importance=np.array(model_k8_load.get_document_topics(document, minimum_probability=0))
+  return topic_importance[:,1]
+
+df_modelado['lda_features']=list(map(lambda doc: document_to_lda_features(model_k8_load,doc), corpus))
+
+#Se tokeniza los datos
+def topic_important(item_score):
+    score=np.argmax(item_score, axis=0)
+    return score
+
+#Se aplica la tokenización
+df_modelado['topic_dominant'] = df_model['lda_features'].apply(topic_important)
+df_modelado
+
+#Se genera un csv con los resultados
+df_modelado.to_csv('topic_model_results.csv', index=False)
+
+#Se saca el número de tweets por tópico
+df_model["topic_dominant"].value_counts()
+
+#Dibujamos esa distribución
+plt.figure(figsize=(10,7))
+ax=df_model["topic_dominant"].value_counts().sort_index().plot(kind='bar')
+plt.ylabel('Frecuencia Absoluta')
+plt.title('Distribución de tópicos en el corpus textual')
+plt.show()
+
+#En este apartado se procede a ver y pintar los bigramas de cada tópico con mayor TF-IDF
+
+#Tópico 1
+topic_1 = df_modelado[df_modelado['topic_dominant']==0] 
+dft=topic_1['lemmas']
+dft= [x for x in dft if str(x) != 'nan']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes en el tópico 1')
+
+#Tópico 2
+topic_2 = df_modelado[df_modelado['topic_dominant']==1] 
+dft=topic_2['lemmas']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 2')
+
+#Tópico 3
+topic_3 = df_modelado[df_modelado['topic_dominant']==2] 
+dft=topic_3['lemmas']
+dft= [x for x in dft if str(x) != 'nan']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 3')
+
+#Tópico 4
+topic_4 = df_modelado[df_modelado['topic_dominant']==3] 
+dft=topic_4['lemmas']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 4')
+
+#Tópico 5
+topic_5 = df_modelado[df_modelado['topic_dominant']==4] 
+dft=topic_5['lemmas']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 5')
+
+#Tópico 6
+topic_6 = df_modelado[df_modelado['topic_dominant']==5] 
+dft=topic_6['lemmas']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 6')
+
+#Tópico 7
+topic_7 = df_modelado[df_modelado['topic_dominant']==6] 
+dft=topic_7['lemmas']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 7')
+
+#Tópico 8
+topic_8 = df_modelado[df_modelado['topic_dominant']==7] 
+dft=topic_8['lemmas']
+tfIdfVectorizer_bi=TfidfVectorizer(use_idf=True, ngram_range=(2,2))
+tfIdf_bi = tfIdfVectorizer_bi.fit_transform(dft)
+names_bi=tfIdfVectorizer_bi.get_feature_names_out()
+freqs_bi = tfIdf_bi.sum(axis=0).A1
+result_bi= dict(zip(names_bi, freqs_bi))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_bi=sorted(result_bi.items(), key = itemgetter(1), reverse = True)
+df_results_bi=pd.DataFrame.from_dict(results_sorted_bi).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_bi[0],df_results_bi[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Bigramas más relevantes del tópico 8')
+
+#Se realiza el mismo proceso para los principales trigramas por tópico
+
+#Tópico 1
+topic_1 = df_modelado[df_modelado['topic_dominant']==0] 
+dft=topic_1['lemmas']
+dft= [x for x in dft if str(x) != 'nan']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 1')
+
+#Tópico 2
+topic_2 = df_modelado[df_modelado['topic_dominant']==1] 
+dft=topic_2['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 2')
+
+#Tópico 3
+topic_3 = df_modelado[df_modelado['topic_dominant']==2] 
+dft=topic_3['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 3')
+
+#Tópico 4
+topic_4 = df_modelado[df_modelado['topic_dominant']==3] 
+dft=topic_4['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 4')
+
+#Tópico 5
+topic_5 = df_modelado[df_modelado['topic_dominant']==4] 
+dft=topic_5['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 5')
+
+#Tópico 6
+topic_6 = df_modelado[df_modelado['topic_dominant']==5] 
+dft=topic_6['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 6')
+
+#Tópico 7
+topic_7 = df_modelado[df_modelado['topic_dominant']==6] 
+dft=topic_7['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 7')
+
+#Tópico 8
+topic_8 = df_modelado[df_modelado['topic_dominant']==7] 
+dft=topic_8['lemmas']
+tfIdfVectorizer_tri=TfidfVectorizer(use_idf=True, ngram_range=(3,3))
+tfIdf_tri = tfIdfVectorizer_tri.fit_transform(dft)
+names_tri= tfIdfVectorizer_tri.get_feature_names_out()
+freqs_tri = tfIdf_tri.sum(axis=0).A1
+result_tri = dict(zip(names_tri, freqs_tri))
+from operator import itemgetter
+i = 0
+results_sorted=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+for key, value in results_sorted:
+    i += 1
+    if i == 11:
+      break
+    print(key, value)
+#Se pinta
+results_sorted_tri=sorted(result_tri.items(), key = itemgetter(1), reverse = True)
+df_results_tri=pd.DataFrame.from_dict(results_sorted_tri).head(30)
+plt.rcParams.update({'font.size': 20})
+plt.figure(figsize=(15,7))
+plt.bar(df_results_tri[0],df_results_tri[1])
+plt.xticks(rotation=90)
+plt.ylabel('TF-IDF Score')
+plt.title('Trigramas más relevantes del tópico 8')
+
+#Análisis de Sentimiento
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
