@@ -814,10 +814,200 @@ plt.title('Trigramas más relevantes del tópico 8')
 
 #Análisis de Sentimiento
 
+#Como se comenta en el documento, la limpieza de este apartado se realiza de una forma distinta, siendo todo el códio de R igual menos donde se quita los stopwords, puntuación y mayúsculas
 
+#Se lee el nuevo corpus con la nuvea limpieza hecha y se eliminan los duplicados
+df_sentiment =pd.read_excel('df_filtered_xenofobia_as.xlsx')
+df_sentiment = df_sentiment.drop_duplicates()
+df_sentiment
 
+#También se procede a leer el documento con los resultados del modelado de tópicos
+df_topics=pd.read_csv('topic_model_results.csv', sep=',',index_col=False)
+df_topics
 
+#Cogemos la todas las columnas y tranformamos el formato de la columna "Fecha"
+df_topics=df_topics.iloc[:,[1,2,3,4,5,6,7,8,9,10,11,12,13]]
+df_topics['date'] = pd.to_datetime(df_topics['fecha']) 
+df_topics
 
+#Juntamos los dos dataframes
+df_model_sent=df_sentiment.merge(df_topics, how='left',on=['author_id', 'lang', 'fecha','retweet_number','reply_number','like_number','year','month']) 
+df_model_sent
+
+#Se eliminan duplicados de las columnas seleccionadas y se eliminana las filas vacias de la columan "topic_dominant"
+df_model_sent=df_model_sent.drop_duplicates(subset=["cleaned_text_x", "cleaned_text_y", "author_id","fecha","lang","retweet_number","reply_number","like_number","year"]).reset_index(drop=True)
+df_model_sent = df_model_sent.dropna(subset=['topic_dominant']) 
+df_model_sent
+
+#Tokenización
+def tokenize(text):
+    text = str(text)
+    tokens = text.split()
+    return tokens
+df_model_sent ['tokens'] = df_model_sent ['cleaned_text_x'].apply(tokenize)
+print(df_sentiment.head())
+
+#Se elimina celdas vacias de la columna seleccionada
+df_model_sent=df_model_sent.dropna(subset=['cleaned_text_x']).reset_index(drop=True)
+df_model_sent
+
+#Se añade una nueva columna con la libreria emoji utilizada en el dataset
+import emoji
+df_model_sent['cleaned_text_sent_emoji'] = df_model_sent['cleaned_text_x'].apply(lambda s: emoji.replace_emoji(s, '')) #añade una nueva colmna 
+df_model_sent
+
+#Se puntua el sentimiento de cada tweet 
+def tweet_scores(data_frame): 
+  
+    sid_obj = SentimentIntensityAnalyzer()
+    scores = [] 
+    n = data_frame.shape[0]
+    for i in range(n):
+      sentence = data_frame.iloc[i]
+      sentiment_dict = sid_obj.polarity_scores(sentence)
+      compound = sentiment_dict['compound']
+      scores.append(compound)
+    return scores
+    
+#Se puntua la columna específica
+df_model_sent['scores']=tweet_scores(df_model_sent['cleaned_text_sent_emoji']) 
+df_model_sent['scores'].describe()
+
+#Se cambia el formato a la columna fecha
+df_sentiment['date'] = pd.to_datetime(df_sentiment['fecha']) 
+df_sentiment
+
+#Se dibuja un boxplot
+df_model_sent.boxplot(column='scores', figsize=(12,8), showmeans=True, showfliers=False)
+
+#Se agrupa por fecha y valores, añadiendo una columna fecha
+df_bygroup=pd.DataFrame(df_model_sent.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_fecha.csv')
+df_bygroup
+
+#Se pintan los resultados
+plt.figure(figsize=(15,7)) 
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+plt.hist(df_model_sent['scores'], bins=25) #Se pinta también un histograma
+
+#Para finalizar se realizan los gráficos del analisis de sentimiento por tópico
+
+#Tópico 1
+topic_1_sentiment = df_model_sent[df_model_sent['topic_dominant']==0] 
+topic_1_sentiment = topic_1_sentiment[topic_1_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_1_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_1.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 2
+topic_2_sentiment = df_model_sent[df_model_sent['topic_dominant']==1] 
+topic_2_sentiment = topic_2_sentiment[topic_2_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_2_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_2.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 3
+topic_3_sentiment = df_model_sent[df_model_sent['topic_dominant']==2] 
+topic_3_sentiment = topic_3_sentiment[topic_3_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_3_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_3.csv')
+df_bygroup
+#Se Pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 4
+topic_4_sentiment = df_model_sent[df_model_sent['topic_dominant']==3] 
+topic_4_sentiment = topic_4_sentiment[topic_4_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_4_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_4.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 5
+topic_5_sentiment = df_model_sent[df_model_sent['topic_dominant']==4] 
+topic_5_sentiment = topic_5_sentiment[topic_5_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_5_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_5.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 6
+topic_6_sentiment = df_model_sent[df_model_sent['topic_dominant']==5] 
+topic_6_sentiment = topic_6_sentiment[topic_6_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_6_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_6.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 7
+topic_7_sentiment = df_model_sent[df_model_sent['topic_dominant']==6] 
+topic_7_sentiment = topic_7_sentiment[topic_7_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_7_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_7.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
+
+#Tópico 8
+topic_8_sentiment = df_model_sent[df_model_sent['topic_dominant']==7] 
+topic_8_sentiment = topic_8_sentiment[topic_8_sentiment.date.notnull()]
+df_bygroup=pd.DataFrame(topic_8_sentiment.groupby(['date'])['scores'].agg('sum'))
+df_bygroup['date']=df_bygroup.index
+df_bygroup.to_csv('Racismo_AS_8.csv')
+df_bygroup
+#Se pinta
+plt.figure(figsize=(15,7))
+plt.rcParams['agg.path.chunksize'] = 10000
+plt.plot(df_bygroup['date'],df_bygroup['scores'],color="darkblue")
+plt.grid()
+plt.show()
 
 
 
